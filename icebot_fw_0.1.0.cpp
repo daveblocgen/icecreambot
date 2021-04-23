@@ -29,11 +29,14 @@ int h_lim_val = 0;          //Limit Switch value
 //Define Variables we'll be connecting to
 double Setpoint, Input, Output;
 //Specify the links and initial tuning parameters
-PID myPID(&Input, &Output, &Setpoint, 0.08, 0.009, 0.001, DIRECT);
+PID myPID(&Input, &Output, &Setpoint, 0.680, 0.09, 0.018, DIRECT);
 
 int movState = 0;           //State of the movement State Machine
 int valOUT = 0;             //Value of the output from the PID
-long targetPos = 6000;
+long targetPos = 8000;      //current target position
+long gap = 0;               //gap between the target and the current position
+
+int arvl_state = 0;         //state of the arrival state machine. If the motor has arrived within a certain tolerance, it switches state
 
 //motor setups
 int mot_speed = 0;
@@ -50,7 +53,7 @@ void setup() {
     //turn the PID on
   myPID.SetMode(AUTOMATIC);
   myPID.SetSampleTime(1);  // refresh rate of PID controller
-  myPID.SetOutputLimits(-255, 255); // this is the MAX PWM value to move motor, here change in value reflect change in speed of motor.
+  myPID.SetOutputLimits(-250, 250); // this is the MAX PWM value to move motor, here change in value reflect change in speed of motor.
 
   //Enable Communication
   Serial.begin(9600);  
@@ -62,6 +65,38 @@ void loop() {
   enc_sm();
   homing_sm();
   mov_sm();
+  arrival_sm();
+}
+
+void arrival_sm(){
+//Disables the motor if it has arrived within a tolerance
+  switch(arvl_state){
+
+    //standby state
+    case 0:
+    break;
+
+    case 1:
+      gap = abs(targetPos - newPos);
+      //Serial.println("   Distance to target is: "+ gap);
+      if(gap < 20){
+        Serial.print("Arrived at Destination!");
+        Serial.print(int(gap));
+        movState = 0;
+        arvl_state = 2;
+      }
+    break;
+
+    case 2:
+    motstop();
+    gap = abs(targetPos - newPos);
+    if(int(gap) > 20 && movState == 0){
+      movState = 1;
+      arvl_state = 1;
+      Serial.println("re-enabling Motor");
+    } 
+    break;
+  }
 }
 
 
@@ -79,7 +114,7 @@ void enc_sm(){
     newPos = myEnc.read();
     if(newPos != oldPos){
       oldPos = newPos;
-      Serial.print("Current Encoder Position:");
+      //Serial.print("Current Encoder Position:");
       Serial.println(newPos);      
       encState = 2;
     }
@@ -93,6 +128,7 @@ void enc_sm(){
         Serial.println(" Homing complete; Encoder set to Zero");
         encState = 1;
         movState = 1;
+        arvl_state = 1;
       }
       encState = 1;
     break;
@@ -157,13 +193,14 @@ void homing_sm() {
         break;
 
         case 1:     //Standby State
-          mot_speed = 70;
+          mot_speed = 130;
           Serial.println(hstate);
           hstate = 2;
         break;
 
         case 2:     //Homing - Begin travelling in reverse
           reverse();
+          Serial.println("Homing");
             
           h_lim_val = digitalRead(h_limit);
             //Serial.println(h_lim_val);
