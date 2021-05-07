@@ -3,7 +3,7 @@
 #include <PID_v1.h>
 
 //initialize encoders
-Encoder myEnc(2,3);
+Encoder myEnc(2,3);     // 20.75 Pulses per mm
 
 //Initialize Limit Switch
 #define h_limit 21
@@ -16,21 +16,23 @@ Encoder myEnc(2,3);
 #define motor_rev 6
 
 //Set Up the Encoder Variables
-int encState = 1;          //Default STate of the Encoder STate machine
+float ppmm = 20.6;          //Pulses per mm of the carriage
+int encState = 1;          //Default State of the Encoder STate machine
 long newPos = 0;           //New Encoder Position
 long oldPos = -999;        //Old encoder position
 
 //Limit Switch Setup
-int prev_hstate = 0;        
-int hstate = 1;             //variable for the state machine of the
+int prev_hstate = 0;        //Previous state
+int hstate = 1;             //variable for the state machine of the homing state machine
 int homing_status = 0;      //0 indicates not homed 1 indicates homed
 int h_lim_val = 0;          //Limit Switch value
 
 //Movement State machine variables
 int movState = 0;           //State of the movement State Machine
 int valOUT = 0;             //Value of the output from the PID
-long targetPos = 8000;      //current target position
-long targetArray[] = {8000, 4000, 12000};   //Array that stores the target positions
+long targetPos = 100;      //current target position
+long targetArray[] = {213, 480, 12000, 747};   //Array that stores the target position in mm
+int arrayIndex = 3;         //stores the current index of the array target position
 long gap = 0;               //gap between the target and the current position
 
 int arvl_state = 0;         /*state of the arrival state machine. If the motor has 
@@ -63,19 +65,29 @@ void setup() {
   //Enable Communication
   Serial.begin(9600);  
   Serial.println("Connected!");
-
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
+void loop() // put your main code here, to run repeatedly:
+{
   enc_sm();
   homing_sm();
   mov_sm();
 
 }
 
-void enc_sm(){
+//Converts mm to pulses by receiving a target in mm
+int from_mm(long mm)
+{
+  int conversion;
+  mm = mm - 90;       //Subtract 90 mm to cneter target to the center of the cupholder
+  conversion = round(mm * ppmm);    //Multiply the mm by the encoder resolution
+
+  return conversion;
+}
+
 //State Machine for reading the encoder position  
+void enc_sm() 
+{      
   switch (encState) {
     
     //Standby State
@@ -98,12 +110,13 @@ void enc_sm(){
     }
     break;
 
-    //Homing Complete - Set encoder to Zero
-    case 2:
+    case 2:   //Homing Complete - Set encoder to Zero
       if(homing_status == 1){
         delay(150);
         myEnc.write(0);
         Serial.println(" Homing complete; Encoder set to Zero");
+        Serial.println("target position is: ");
+        Serial.print(targetPos);
         encState = 3;
         movState = 1;
         arvl_state = 1;
@@ -118,7 +131,8 @@ void enc_sm(){
 }
 
 //State machine for the homing procedure
-void homing_sm() {
+void homing_sm()    
+{
     prev_hstate = hstate;
     switch (hstate) {
         case 0:     //reset
@@ -142,15 +156,14 @@ void homing_sm() {
 
           if(h_lim_val == 1){            
             Serial.println("Homing Complete!");
+            Serial.println(targetPos);
             //Serial.println(h_lim_val);
             motstop();
-            
             homing_status = 1;
             hstate = 0;
           }else{
             hstate = 1;
           }
-            
         break;
 
         case 3:     //Transitory State
@@ -172,6 +185,8 @@ void mov_sm(){
     break;
 
     case 1:
+      targetPos = targetArray[arrayIndex];
+      targetPos = from_mm(targetPos);
       Setpoint = targetPos;
       Input = newPos;
       myPID.Compute();
@@ -222,16 +237,19 @@ void mov_sm(){
   }
 }
 
+//Moves Motor forward
 void forward() {
     analogWrite(motor_fwd, mot_speed);
     digitalWrite(motor_rev, LOW);
 }
 
+//Reverses Motor Direction
 void reverse() {
     analogWrite(motor_rev, mot_speed);
     digitalWrite(motor_fwd, LOW);
 }
 
+//Disables the motor power
 void motstop(){
   digitalWrite(motor_rev, LOW);
   digitalWrite(motor_fwd, LOW);
