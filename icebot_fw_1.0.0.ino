@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Encoder.h>
 #include <PID_v1.h>
+#include <Servo.h>
 
 //initialize encoders
 Encoder myEnc(2, 3); // 20.6 Pulses per mm
@@ -11,6 +12,13 @@ Encoder myEnc(2, 3); // 20.6 Pulses per mm
 // Initialize start Button
 #define start_btn 7
 
+//Initialize Servo
+Servo dispenseServo[3];
+int activeServo = 0;    //Stores the active servo
+int servoPosition[] = {225, 476, 749};
+//Serial Communication variables
+String inByte;
+String payload;
 //Initialize Motor
 #define motor_fwd 5 //Motor Forward PWM Pin
 #define motor_rev 6 //Motor Reverse PWM Pin
@@ -25,12 +33,12 @@ long oldPos = -999; //Old encoder position
 int PrevHState = 0;    //Previous state
 int hstate = 1;         //variable for the state machine of the homing state machine
 int homingStatus = 0;  //0 indicates not homed 1 indicates homed
-int homing_speed = 110; //speed of motor when homing
+int homing_speed = 150; //speed of motor when homing
 int hLimVal = 0;      //Limit Switch value
 
 String message = "Placeholder";     //for storing debug messages
 int debug = 1;        //state machine debug
-int encoderDebug = 1;   //shows Encoder values
+int encoderDebug = 0;   //shows Encoder values
 
 //Maestro State Machine Variables
 int maestroState = 0; //Base state of the Maestro
@@ -41,8 +49,8 @@ int programComplete = 0;    //Set to 1 when the program is complete
 int movState = 6;                          //State of the movement State Machine
 int oldMovState = 0;                       //Previous movState
 long targetPos = 100;                      //current target position
-long targetArray[] = {747, 213, 480}; //Array that stores the target position in mm
-int programLength = 3;                     //stores the length of the program
+int targetArray[] = {749, 225, 476, 749, 225, 476, 900}; //Array that stores the target position in mm
+int programLength = sizeof(targetArray) / sizeof(targetArray[0]);                   //stores the length of the program
 int arrayIndex = 0;                        //stores the current index of the array target position
 long gap = 0;                              //gap between the target and the current position
 
@@ -70,7 +78,11 @@ void setup()
   //turn the PID on
   myPID.SetMode(AUTOMATIC);
   myPID.SetSampleTime(1);           // refresh rate of PID controller
-  myPID.SetOutputLimits(-150, 150); // this is the MAX PWM value to move motor, here change in value reflect change in speed of motor.
+  myPID.SetOutputLimits(-120, 170); // this is the MAX PWM value to move motor, here change in value reflect change in speed of motor.
+
+  for (int i = 0; i < 3; i++) {
+    dispenseServo[i].attach(i + 8);
+  }
 
   //Enable Communication
   Serial.begin(115200);
@@ -79,8 +91,12 @@ void setup()
 
 void loop() // put your main code here, to run repeatedly:
 {
+
   read_enc();
   maestro();
+  serial_comm();
+
+  //  dispenseServo.write(60);
 
   if (debug == 1) {
     if (maestroState != oldMaestroState || movState != oldMovState) {
@@ -93,6 +109,28 @@ void loop() // put your main code here, to run repeatedly:
   }
 }
 
+void serial_comm() {
+  int x, y, bs1, bs2;
+  x = y = bs1 = bs2 = 0;
+  if (Serial.available() > 0) {
+    x = Serial.parseInt();
+    y = Serial.parseInt();
+    bs1 = Serial.parseInt();
+    bs2 = Serial.parseInt();
+    char r = Serial.read();
+    if (r == '\n') {}
+
+    Serial.print("x =  ");
+    Serial.println(x);
+    Serial.print("y =  ");
+    Serial.println(y);
+    Serial.print("bs1 =  ");
+    Serial.println(bs1);
+    Serial.print("bs2 =  ");
+    Serial.println(bs2);
+  }
+}
+
 //The master controller. The Maestro, if you will
 void maestro() {
   switch (maestroState)
@@ -101,16 +139,7 @@ void maestro() {
     case 0:
       if (homingStatus == 0)
       {
-        if (h_limit == 1) {
-          motstop();
-          delay(180);
-          myEnc.write(0);
-          Serial.println("Homing complete; Encoder set to Zero!");
-          homingStatus = 1;
-          maestroState = 1;
-
-        }
-        homing_sm();    //Trigger the homing procedure if the machine is not homed
+        homing_sm();
       } else
       {
         maestroState = 1;
@@ -146,7 +175,10 @@ void maestro() {
         mot_speed = Output;
         mov_sm();
       } else {
-        Serial.println("Maestro Thinks we've arrived");
+        delay(200);
+        message = "Maestro: Arrived at Destination! Encoder Position: " + String(newPos);
+        open_dispensor(targetPos);
+        Serial.println(message);
         maestroState = 4;
       }
 
@@ -167,6 +199,31 @@ void maestro() {
       break;
   }
 
+}
+
+void open_dispensor(int carriage_destination) {
+
+  if (carriage_destination == from_mm(servoPosition[0]))
+  {
+    dispenseServo[2].write(0);
+    delay(400);
+    dispenseServo[2].write(60);
+    delay(400);
+  }
+  else if (carriage_destination == from_mm(servoPosition[1]))
+  {
+    dispenseServo[1].write(0);
+    delay(400);
+    dispenseServo[1].write(60);
+    delay(400);
+  }
+  else if (carriage_destination == from_mm(servoPosition[2]))
+  {
+    dispenseServo[0].write(0);
+    delay(400);
+    dispenseServo[0].write(60);
+    delay(400);
+  }
 }
 
 //Converts mm to pulses by receiving a target in mm
@@ -200,10 +257,10 @@ void read_enc()
   if (newPos != oldPos)
   {
     oldPos = newPos;
-    if(encoderDebug == 1){
-        Serial.print("Current Encoder Position:");
-        Serial.println(newPos);
-      }
+    if (encoderDebug == 1) {
+      Serial.print("Current Encoder Position:");
+      Serial.println(newPos);
+    }
   }
 }
 
@@ -223,6 +280,7 @@ void homing_sm()
     message = "Current encoder value: " + String(newPos);
     Serial.println(message);
     homingStatus = 1;
+    maestroState = 1;
     message = "Current Homing Status: " + String(homingStatus);
   } else {
     homingStatus = 0;
@@ -238,7 +296,6 @@ void check_gap() {
     Serial.println("Arrived at Destination! ");
     Serial.print("Disabling Motor: Gap to Target is: ");
     Serial.print(int(gap));
-
     motstop();
     //    delay(300);
     movState = 6;
@@ -304,5 +361,5 @@ void motstop()
 {
   digitalWrite(motor_rev, LOW);
   digitalWrite(motor_fwd, LOW);
-  Serial.println("Motor Disabled");
+  //  Serial.println("Motor Disabled");
 }
