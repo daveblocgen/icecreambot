@@ -15,7 +15,7 @@ Encoder myEnc(2, 3); // 20.6 Pulses per mm
 //Initialize Servo
 Servo dispenseServo[3];
 int activeServo = 0;    //Stores the active servo
-int servoPosition[] = {225, 476, 749};
+int servoPosition[] = {221, 480, 749};
 //Serial Communication variables
 String inByte;
 String payload;
@@ -38,7 +38,7 @@ int hLimVal = 0;      //Limit Switch value
 
 String message = "Placeholder";     //for storing debug messages
 int debug = 1;        //state machine debug
-int encoderDebug = 0;   //shows Encoder values
+int encoderDebug = 1;   //shows Encoder values
 
 //Maestro State Machine Variables
 int maestroState = 0; //Base state of the Maestro
@@ -49,7 +49,7 @@ int programComplete = 0;    //Set to 1 when the program is complete
 int movState = 6;                          //State of the movement State Machine
 int oldMovState = 0;                       //Previous movState
 long targetPos = 100;                      //current target position
-int targetArray[] = {749, 225, 476, 749, 225, 476, 900}; //Array that stores the target position in mm
+int targetArray[] = {221, 480, 749, 900}; //Array that stores the target position in mm
 int programLength = sizeof(targetArray) / sizeof(targetArray[0]);                   //stores the length of the program
 int arrayIndex = 0;                        //stores the current index of the array target position
 long gap = 0;                              //gap between the target and the current position
@@ -82,6 +82,7 @@ void setup()
 
   for (int i = 0; i < 3; i++) {
     dispenseServo[i].attach(i + 8);
+    dispenseServo[i].write(64);
   }
 
   //Enable Communication
@@ -207,21 +208,21 @@ void open_dispensor(int carriage_destination) {
   {
     dispenseServo[2].write(0);
     delay(400);
-    dispenseServo[2].write(60);
+    dispenseServo[2].write(64);
     delay(400);
   }
   else if (carriage_destination == from_mm(servoPosition[1]))
   {
     dispenseServo[1].write(0);
     delay(400);
-    dispenseServo[1].write(60);
+    dispenseServo[1].write(64);
     delay(400);
   }
   else if (carriage_destination == from_mm(servoPosition[2]))
   {
     dispenseServo[0].write(0);
     delay(400);
-    dispenseServo[0].write(60);
+    dispenseServo[0].write(64);
     delay(400);
   }
 }
